@@ -6,11 +6,7 @@
 
 module Plutarch.Types (
   PDiscoveryNodeAction (..),
-  PNodeValidatorAction (..),
   PDiscoveryConfig (..),
-  PDiscoveryLaunchConfig (..),
-  PSepNodeAction (..),
-  PSeparatorConfig (..),
   PDiscoverySetNode (..),
   PNodeKey (..),
   PNodeKeyState (..),
@@ -33,7 +29,6 @@ import Plutarch.Api.V2 (
   PAddress,
   PPOSIXTime,
   PPubKeyHash (PPubKeyHash),
-  PStakingCredential (..),
   PTxOutRef,
  )
 import Plutarch.Classes
@@ -46,52 +41,6 @@ import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 import PlutusLedgerApi.V2 (BuiltinByteString, PubKeyHash)
 import PlutusTx qualified
-
-data NodeValidatorAction
-  = LinkedListAct
-  | ModifyCommitment
-  | RewardFoldAct
-  deriving stock (Generic, Show)
-
-PlutusTx.unstableMakeIsData ''NodeValidatorAction
-
-data PNodeValidatorAction (s :: S)
-  = PLinkedListAct (Term s (PDataRecord '[]))
-  | PModifyCommitment (Term s (PDataRecord '[]))
-  | PRewardFoldAct (Term s (PDataRecord '[]))
-  deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PShow)
-
-instance DerivePlutusType PNodeValidatorAction where
-  type DPTStrat _ = PlutusTypeData
-
-instance PUnsafeLiftDecl PNodeValidatorAction where
-  type PLifted PNodeValidatorAction = NodeValidatorAction
-
-deriving via
-  (DerivePConstantViaData NodeValidatorAction PNodeValidatorAction)
-  instance
-    (PConstantDecl NodeValidatorAction)
-
-instance PTryFrom PData (PAsData PNodeValidatorAction)
-
-instance PTryFrom PData PNodeValidatorAction
-
-newtype PDiscoveryLaunchConfig (s :: S)
-  = PDiscoveryLaunchConfig
-      ( Term
-          s
-          ( PDataRecord
-              '[ "discoveryDeadline" ':= PPOSIXTime
-               , "penaltyAddress" ':= PAddress
-               , "globalCred" ':= PStakingCredential
-               ]
-          )
-      )
-  deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields, PEq)
-
-instance DerivePlutusType PDiscoveryLaunchConfig where type DPTStrat _ = PlutusTypeData
 
 newtype PDiscoveryConfig (s :: S)
   = PDiscoveryConfig
@@ -121,19 +70,6 @@ data DiscoverySetNode = MkSetNode
   deriving stock (Show, Eq, Generic)
 
 PlutusTx.unstableMakeIsData ''DiscoverySetNode
-
-data SepNodeAction
-  = SepInit
-  | SepDeinit
-  | SepInsert PubKeyHash DiscoverySetNode
-  | SepRemove PubKeyHash DiscoverySetNode
-  | InsertSeps [BuiltinByteString] DiscoverySetNode
-  | -- | first arg is the key to insert, second arg is the covering node
-    RemoveSeps [BuiltinByteString] DiscoverySetNode
-  -- first arg is the key to remove, second arg is the covering node
-  deriving stock (Show, Eq, Generic)
-
-PlutusTx.unstableMakeIsData ''SepNodeAction
 
 data DiscoveryNodeAction
   = Init
@@ -242,21 +178,6 @@ instance ScottConvertible PDiscoverySetNode where
                 )
             )
 
-newtype PSeparatorConfig (s :: S)
-  = PSeparatorConfig
-      ( Term
-          s
-          ( PDataRecord
-              '[ "signer" ':= PPubKeyHash
-               , "cutOff" ':= PPOSIXTime
-               ]
-          )
-      )
-  deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PDataFields, PEq)
-
-instance DerivePlutusType PSeparatorConfig where type DPTStrat _ = PlutusTypeData
-
 mkNode :: Term s (PNodeKey :--> PNodeKey :--> PDiscoverySetNode)
 mkNode = phoistAcyclic $
   plam $ \key next ->
@@ -288,30 +209,6 @@ deriving via
   (DerivePConstantViaData DiscoveryNodeAction PDiscoveryNodeAction)
   instance
     PConstantDecl DiscoveryNodeAction
-
-data PSepNodeAction (s :: S)
-  = PSepInit (Term s (PDataRecord '[]))
-  | PSepDeinit (Term s (PDataRecord '[]))
-  | PSepInsert (Term s (PDataRecord '["keyToInsert" ':= PPubKeyHash, "coveringNode" ':= PDiscoverySetNode]))
-  | PSepRemove (Term s (PDataRecord '["keyToRemove" ':= PPubKeyHash, "coveringNode" ':= PDiscoverySetNode]))
-  | -- | separators must be sorted or validation will fail
-    PInsertSeps (Term s (PDataRecord '["separators" ':= PBuiltinList (PAsData PByteString), "coveringNode" ':= PDiscoverySetNode]))
-  | PRemoveSeps (Term s (PDataRecord '["separators" ':= PBuiltinList (PAsData PByteString), "coveringNode" ':= PDiscoverySetNode]))
-  deriving stock (Generic)
-  deriving anyclass (PlutusType, PIsData, PEq)
-
-instance DerivePlutusType PSepNodeAction where type DPTStrat _ = PlutusTypeData
-
-deriving anyclass instance
-  PTryFrom PData (PAsData PSepNodeAction)
-
-instance PUnsafeLiftDecl PSepNodeAction where
-  type PLifted PSepNodeAction = SepNodeAction
-
-deriving via
-  (DerivePConstantViaData SepNodeAction PSepNodeAction)
-  instance
-    PConstantDecl SepNodeAction
 
 -----------------------------------------------
 -- Helpers:
