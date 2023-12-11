@@ -33,7 +33,6 @@ import Plutarch.Helpers (
   correctNodeTokenMinted,
   coversKey,
  )
-import Plutarch.Internal (Config (..))
 import Plutarch.List (pconvertLists)
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
@@ -90,13 +89,12 @@ nodeInputUtxoDatumUnsafe = phoistAcyclic $
       pcon (PPair (pfromData outF.value) nodeDat)
 
 parseNodeOutputUtxo ::
-  Config ->
   ClosedTerm
     ( PAsData PCurrencySymbol
         :--> PTxOut
         :--> PPair (PValue 'Sorted 'Positive) (PAsData PDiscoverySetNode)
     )
-parseNodeOutputUtxo _ = phoistAcyclic $
+parseNodeOutputUtxo = phoistAcyclic $
   plam $ \nodeCS out -> P.do
     txOut <- pletFields @'["address", "value", "datum"] out
     value <- plet $ pfromData $ txOut.value
@@ -121,7 +119,6 @@ parseNodeOutputUtxo _ = phoistAcyclic $
 
 makeCommon ::
   forall {r :: PType} {s :: S}.
-  Config ->
   Term s PScriptContext ->
   TermCont @r
     s
@@ -131,7 +128,7 @@ makeCommon ::
     , Term s (PBuiltinList (PAsData PPubKeyHash))
     , Term s (PInterval PPOSIXTime)
     )
-makeCommon cfg ctx' = do
+makeCommon ctx' = do
   ------------------------------
   -- Preparing info needed for validation:
   ctx <- tcont $ pletFields @'["txInfo", "purpose"] ctx'
@@ -173,7 +170,7 @@ makeCommon cfg ctx' = do
   nodeOutputs <-
     tcont . plet $
       pmap
-        # (parseNodeOutputUtxo cfg # ownCS)
+        # (parseNodeOutputUtxo # ownCS)
         #$ pconvertLists
         # toNodeValidator
 
@@ -193,8 +190,8 @@ makeCommon cfg ctx' = do
     , info.validRange
     )
 
-pInit :: forall (s :: S). Config -> PPriceDiscoveryCommon s -> Term s PUnit
-pInit _ common = P.do
+pInit :: forall (s :: S). PPriceDiscoveryCommon s -> Term s PUnit
+pInit common = P.do
   -- Input Checks
   passert "Init must not spend Nodes" $ pnull # common.nodeInputs
   -- Output Checks:
@@ -210,8 +207,8 @@ pInit _ common = P.do
   pconstant ()
 
 -- TODO add deadline check
-pDeinit :: forall s. Config -> PPriceDiscoveryCommon s -> Term s PUnit
-pDeinit _ common = P.do
+pDeinit :: forall s. PPriceDiscoveryCommon s -> Term s PUnit
+pDeinit common = P.do
   -- Input Checks
   -- The following commented code should be used instead for protocols where node removal
   -- needs to preserve the integrity of the linked list.
@@ -229,10 +226,9 @@ pDeinit _ common = P.do
 
 pInsert ::
   forall (s :: S).
-  Config ->
   PPriceDiscoveryCommon s ->
   Term s (PAsData PPubKeyHash :--> PAsData PDiscoverySetNode :--> PUnit)
-pInsert _ common = plam $ \pkToInsert node -> P.do
+pInsert common = plam $ \pkToInsert node -> P.do
   keyToInsert <- plet . pto . pfromData $ pkToInsert
   passert "Node should cover inserting key" $
     coversKey # node # keyToInsert
@@ -266,14 +262,13 @@ pInsert _ common = plam $ \pkToInsert node -> P.do
 
 pRemove ::
   forall (s :: S).
-  Config ->
   PPriceDiscoveryCommon s ->
   Term s (PInterval PPOSIXTime) ->
   Term s PDiscoveryConfig ->
   Term s (PBuiltinList PTxOut) ->
   Term s (PBuiltinList (PAsData PPubKeyHash)) ->
   Term s (PAsData PPubKeyHash :--> PAsData PDiscoverySetNode :--> PUnit)
-pRemove _ common vrange discConfig outs sigs = plam $ \pkToRemove node -> P.do
+pRemove common vrange discConfig outs sigs = plam $ \pkToRemove node -> P.do
   keyToRemove <- plet . pto . pfromData $ pkToRemove
   passert "Node does not cover key to remove" $
     coversKey # node # keyToRemove
@@ -340,12 +335,11 @@ pRemove _ common vrange discConfig outs sigs = plam $ \pkToRemove node -> P.do
 
 pClaim ::
   forall (s :: S).
-  Config ->
   PPriceDiscoveryCommon s ->
   Term s (PBuiltinList PTxOut) ->
   Term s (PBuiltinList (PAsData PPubKeyHash)) ->
   Term s (PAsData PPubKeyHash :--> PUnit)
-pClaim _ common _ sigs = plam $ \pkToRemove -> P.do
+pClaim common _ sigs = plam $ \pkToRemove -> P.do
   keyToRemove <- plet . pto . pfromData $ pkToRemove
 
   -- Input Checks
