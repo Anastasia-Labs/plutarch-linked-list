@@ -145,10 +145,10 @@ library
 
   hs-source-dirs:  src
 
--- test-suite plutarch-linkedlist-test
---   import:         lang, test-dependencies
---   type:           exitcode-stdio-1.0
---   main-is:        Spec.hs
---   hs-source-dirs: test
---   other-modules:  Spec.LinkedListSpec
---   build-depends:  plutarch-linkedlist
+test-suite plutarch-linkedlist-test
+  import:         lang, test-dependencies
+  type:           exitcode-stdio-1.0
+  main-is:        Spec.hs
+  hs-source-dirs: test
+  other-modules:  Spec.LinkedListSpec
+  build-depends:  plutarch-linkedlist

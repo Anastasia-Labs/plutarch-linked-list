@@ -6,10 +6,14 @@
 
 module Plutarch.Types (
   PDiscoveryNodeAction (..),
+  DiscoveryNodeAction (..),
   PDiscoveryConfig (..),
+  DiscoveryConfig (..),
   PDiscoverySetNode (..),
   PNodeKey (..),
   PNodeKeyState (..),
+  DiscoverySetNode (..),
+  DiscoveryNodeKey (..),
   isEmptySet,
   asPredecessorOf,
   asSuccessorOf,
@@ -39,8 +43,23 @@ import Plutarch.DataRepr (
 import Plutarch.Lift (PConstantDecl, PUnsafeLiftDecl (PLifted))
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
-import PlutusLedgerApi.V2 (BuiltinByteString, PubKeyHash)
+import PlutusLedgerApi.V2 (
+  Address,
+  BuiltinByteString,
+  POSIXTime,
+  PubKeyHash,
+  TxOutRef,
+ )
 import PlutusTx qualified
+
+data DiscoveryConfig = DiscoveryConfig
+  { initUTxO :: TxOutRef
+  , discoveryDeadline :: POSIXTime
+  , penaltyAddress :: Address
+  }
+  deriving stock (Generic, Eq, Show)
+
+PlutusTx.makeIsDataIndexed ''DiscoveryConfig [('DiscoveryConfig, 0)]
 
 newtype PDiscoveryConfig (s :: S)
   = PDiscoveryConfig
@@ -55,13 +74,15 @@ newtype PDiscoveryConfig (s :: S)
       )
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PDataFields, PEq)
-
+instance PUnsafeLiftDecl PDiscoveryConfig where type PLifted PDiscoveryConfig = DiscoveryConfig
+deriving via (DerivePConstantViaData DiscoveryConfig PDiscoveryConfig) instance PConstantDecl DiscoveryConfig
 instance DerivePlutusType PDiscoveryConfig where type DPTStrat _ = PlutusTypeData
 
 data DiscoveryNodeKey = Key BuiltinByteString | Empty
   deriving stock (Show, Eq, Ord, Generic)
 
 PlutusTx.unstableMakeIsData ''DiscoveryNodeKey
+PlutusTx.makeLift ''DiscoveryNodeKey
 
 data DiscoverySetNode = MkSetNode
   { key :: DiscoveryNodeKey
@@ -69,7 +90,8 @@ data DiscoverySetNode = MkSetNode
   }
   deriving stock (Show, Eq, Generic)
 
-PlutusTx.unstableMakeIsData ''DiscoverySetNode
+PlutusTx.makeIsDataIndexed ''DiscoverySetNode [('MkSetNode, 0)]
+PlutusTx.makeLift ''DiscoverySetNode
 
 data DiscoveryNodeAction
   = Init
@@ -80,7 +102,14 @@ data DiscoveryNodeAction
     Remove PubKeyHash DiscoverySetNode
   deriving stock (Show, Eq, Generic)
 
-PlutusTx.unstableMakeIsData ''DiscoveryNodeAction
+PlutusTx.makeIsDataIndexed
+  ''DiscoveryNodeAction
+  [ ('Init, 0)
+  , ('Deinit, 1)
+  , ('Insert, 2)
+  , ('Remove, 3)
+  ]
+PlutusTx.makeLift ''DiscoveryNodeAction
 
 data PNodeKey (s :: S)
   = PKey (Term s (PDataRecord '["_0" ':= PByteString]))
