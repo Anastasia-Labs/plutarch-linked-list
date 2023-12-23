@@ -1,7 +1,7 @@
 {-# OPTIONS_GHC -Wno-unused-do-bind #-}
 
 module Plutarch.LinkedList (
-  PPriceDiscoveryCommon (..),
+  PCommon (..),
   makeCommon,
   pInit,
   pDeinit,
@@ -37,9 +37,9 @@ import Plutarch.List (pconvertLists)
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
 import Plutarch.Types (
-  PDiscoveryConfig,
-  PDiscoverySetNode,
+  PConfig,
   PNodeKey (..),
+  PSetNode,
   asPredecessorOf,
   asSuccessorOf,
   isEmptySet,
@@ -68,7 +68,7 @@ pdivideCeil = phoistAcyclic $ plam $ \a b -> (pdiv # a # b) + pif ((pmod # a # b
 --   ClosedTerm
 --     ( PAsData PCurrencySymbol
 --         :--> PTxOut
---         :--> PMaybe (PAsData PDiscoverySetNode)
+--         :--> PMaybe (PAsData PSetNode)
 --     )
 -- nodeInputUtxoDatum = phoistAcyclic $
 --   plam $ \nodeCS out -> P.do
@@ -81,7 +81,7 @@ pdivideCeil = phoistAcyclic $ plam $ \a b -> (pdiv # a # b) + pif ((pmod # a # b
 nodeInputUtxoDatumUnsafe ::
   ClosedTerm
     ( PTxOut
-        :--> PPair (PValue 'Sorted 'Positive) (PAsData PDiscoverySetNode)
+        :--> PPair (PValue 'Sorted 'Positive) (PAsData PSetNode)
     )
 nodeInputUtxoDatumUnsafe = phoistAcyclic $
   plam $ \out -> pletFields @'["value", "datum"] out $ \outF ->
@@ -92,7 +92,7 @@ parseNodeOutputUtxo ::
   ClosedTerm
     ( PAsData PCurrencySymbol
         :--> PTxOut
-        :--> PPair (PValue 'Sorted 'Positive) (PAsData PDiscoverySetNode)
+        :--> PPair (PValue 'Sorted 'Positive) (PAsData PSetNode)
     )
 parseNodeOutputUtxo = phoistAcyclic $
   plam $ \nodeCS out -> P.do
@@ -122,7 +122,7 @@ makeCommon ::
   Term s PScriptContext ->
   TermCont @r
     s
-    ( PPriceDiscoveryCommon s
+    ( PCommon s
     , Term s (PBuiltinList PTxInInfo)
     , Term s (PBuiltinList PTxOut)
     , Term s (PBuiltinList (PAsData PPubKeyHash))
@@ -190,7 +190,7 @@ makeCommon ctx' = do
     , info.validRange
     )
 
-pInit :: forall (s :: S). PPriceDiscoveryCommon s -> Term s PUnit
+pInit :: forall (s :: S). PCommon s -> Term s PUnit
 pInit common = P.do
   -- Input Checks
   passert "Init must not spend Nodes" $ pnull # common.nodeInputs
@@ -207,7 +207,7 @@ pInit common = P.do
   pconstant ()
 
 -- TODO add deadline check
-pDeinit :: forall s. PPriceDiscoveryCommon s -> Term s PUnit
+pDeinit :: forall s. PCommon s -> Term s PUnit
 pDeinit common = P.do
   -- Input Checks
   -- The following commented code should be used instead for protocols where node removal
@@ -226,8 +226,8 @@ pDeinit common = P.do
 
 pInsert ::
   forall (s :: S).
-  PPriceDiscoveryCommon s ->
-  Term s (PAsData PPubKeyHash :--> PAsData PDiscoverySetNode :--> PUnit)
+  PCommon s ->
+  Term s (PAsData PPubKeyHash :--> PAsData PSetNode :--> PUnit)
 pInsert common = plam $ \pkToInsert node -> P.do
   keyToInsert <- plet . pto . pfromData $ pkToInsert
   passert "Node should cover inserting key" $
@@ -262,12 +262,12 @@ pInsert common = plam $ \pkToInsert node -> P.do
 
 pRemove ::
   forall (s :: S).
-  PPriceDiscoveryCommon s ->
+  PCommon s ->
   Term s (PInterval PPOSIXTime) ->
-  Term s PDiscoveryConfig ->
+  Term s PConfig ->
   Term s (PBuiltinList PTxOut) ->
   Term s (PBuiltinList (PAsData PPubKeyHash)) ->
-  Term s (PAsData PPubKeyHash :--> PAsData PDiscoverySetNode :--> PUnit)
+  Term s (PAsData PPubKeyHash :--> PAsData PSetNode :--> PUnit)
 pRemove common vrange discConfig outs sigs = plam $ \pkToRemove node -> P.do
   keyToRemove <- plet . pto . pfromData $ pkToRemove
   passert "Node does not cover key to remove" $
@@ -305,11 +305,11 @@ pRemove common vrange discConfig outs sigs = plam $ \pkToRemove node -> P.do
 
   passert "signed by user." (pelem # pkToRemove # sigs)
 
-  configF <- pletFields @'["discoveryDeadline", "penaltyAddress"] discConfig
+  configF <- pletFields @'["deadline", "penaltyAddress"] discConfig
 
   let ownInputLovelace = plovelaceValueOf # removedValue
       ownInputFee = pdivideCeil # ownInputLovelace # 4
-      discDeadline = configF.discoveryDeadline
+      discDeadline = configF.deadline
 
   let finalCheck =
         -- user committing before deadline
@@ -335,7 +335,7 @@ pRemove common vrange discConfig outs sigs = plam $ \pkToRemove node -> P.do
 
 pClaim ::
   forall (s :: S).
-  PPriceDiscoveryCommon s ->
+  PCommon s ->
   Term s (PBuiltinList PTxOut) ->
   Term s (PBuiltinList (PAsData PPubKeyHash)) ->
   Term s (PAsData PPubKeyHash :--> PUnit)
@@ -361,14 +361,14 @@ pClaim common _ sigs = plam $ \pkToRemove -> P.do
   pconstant ()
 
 -- Common information shared between all redeemers.
-data PPriceDiscoveryCommon (s :: S) = MkCommon
+data PCommon (s :: S) = MkCommon
   { ownCS :: Term s PCurrencySymbol
   -- ^ state token (own) CS
   , mint :: Term s (PValue 'Sorted 'NonZero)
   -- ^ value minted in current Tx
-  , nodeInputs :: Term s (PList (PPair (PValue 'Sorted 'Positive) (PAsData PDiscoverySetNode)))
+  , nodeInputs :: Term s (PList (PPair (PValue 'Sorted 'Positive) (PAsData PSetNode)))
   -- ^ current Tx outputs to AuctionValidator
-  , nodeOutputs :: Term s (PList (PPair (PValue 'Sorted 'Positive) (PAsData PDiscoverySetNode)))
+  , nodeOutputs :: Term s (PList (PPair (PValue 'Sorted 'Positive) (PAsData PSetNode)))
   -- ^ current Tx inputs
   }
   deriving stock (Generic)
