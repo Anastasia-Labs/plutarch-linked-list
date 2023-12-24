@@ -17,10 +17,10 @@ import Plutarch.Api.V2 (
  )
 import Plutarch.Monadic qualified as P
 import Plutarch.Prelude
-import Plutarch.Types (PDiscoverySetNode, PNodeKey (PEmpty, PKey))
+import Plutarch.Types (PNodeKey (PEmpty, PKey), PSetNode)
 
 -- | Checks that key is 'covered' by the Node
-coversKey :: ClosedTerm (PAsData PDiscoverySetNode :--> PByteString :--> PBool)
+coversKey :: ClosedTerm (PAsData PSetNode :--> PByteString :--> PBool)
 coversKey = phoistAcyclic $
   plam $ \datum keyToCover -> P.do
     nodeDatum <- pletFields @'["key", "next"] datum

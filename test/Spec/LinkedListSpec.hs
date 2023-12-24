@@ -1,36 +1,25 @@
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
-{-# OPTIONS_GHC -Wno-unused-imports #-}
-
 module Spec.LinkedListSpec (unitTest) where
 
 import Plutarch.Api.V2 (
   PMintingPolicy,
   PScriptContext,
-  PTxOutRef,
  )
-import Plutarch.Internal (Config (Config), TracingMode (DoTracing))
 
 import Plutarch.Context (
-  Builder,
-  MintingBuilder,
   UTXO,
   address,
   buildMinting',
   input,
   mint,
   output,
-  referenceInput,
-  script,
   signedWith,
   timeRange,
   txId,
   withInlineDatum,
   withMinting,
-  withRedeemer,
   withRefIndex,
   withRefTxId,
   withValue,
-  withdrawal,
  )
 import Plutarch.Extra.Interval (pafter, pbefore)
 import Plutarch.Test.Precompiled (Expectation (Failure, Success), testEvalCase, tryFromPTerm)
@@ -47,7 +36,6 @@ import PlutusLedgerApi.V2 (
   ScriptContext,
   StakingCredential (..),
   TokenName,
-  TxId (..),
   TxOutRef (..),
   Value,
   singleton,
@@ -60,7 +48,6 @@ import Plutarch.Helpers (
   hasUtxoWithRef,
  )
 import Plutarch.LinkedList (
-  PPriceDiscoveryCommon (mint, ownCS),
   makeCommon,
   pClaim,
   pDeinit,
@@ -72,21 +59,21 @@ import Plutarch.Monadic qualified as P
 import Plutarch.Unsafe (punsafeCoerce)
 
 import Plutarch.Prelude
-import Plutarch.Types (DiscoveryConfig (..), DiscoveryNodeAction (..), DiscoveryNodeKey (..), DiscoverySetNode (..), PDiscoveryConfig (..), PDiscoveryNodeAction (..))
-import Plutarch.Utils (pand'List, passert, pcond)
+import Plutarch.Types (Config (..), NodeAction (..), NodeKey (..), PConfig (..), PNodeAction (..), SetNode (..))
+import Plutarch.Utils (pand'List, pcond)
 
 --------------------------------
 -- FinSet Node Minting Policy:
 --------------------------------
 
-mkDiscoveryNodeMP ::
+mkNodeMP ::
   ClosedTerm
-    ( PDiscoveryConfig
-        :--> PDiscoveryNodeAction
+    ( PConfig
+        :--> PNodeAction
         :--> PScriptContext
         :--> PUnit
     )
-mkDiscoveryNodeMP = plam $ \discConfig redm ctx -> P.do
+mkNodeMP = plam $ \discConfig redm ctx -> P.do
   configF <- pletFields @'["initUTxO"] discConfig
 
   (common, inputs, outs, sigs, vrange) <-
@@ -106,14 +93,14 @@ mkDiscoveryNodeMP = plam $ \discConfig redm ctx -> P.do
       act <- pletFields @'["keyToInsert", "coveringNode"] action
       let insertChecks =
             pand'List
-              [ pafter # (pfield @"discoveryDeadline" # discConfig) # vrange
+              [ pafter # (pfield @"deadline" # discConfig) # vrange
               , pelem # act.keyToInsert # sigs
               ]
       pif insertChecks (pInsert common # act.keyToInsert # act.coveringNode) (ptraceError "Insert must before deadline and include signature")
     PRemove action -> P.do
-      configF <- pletFields @'["discoveryDeadline"] discConfig
+      configF <- pletFields @'["deadline"] discConfig
       act <- pletFields @'["keyToRemove", "coveringNode"] action
-      discDeadline <- plet configF.discoveryDeadline
+      discDeadline <- plet configF.deadline
       pcond
         [
           ( pbefore # discDeadline # vrange
@@ -126,29 +113,29 @@ mkDiscoveryNodeMP = plam $ \discConfig redm ctx -> P.do
         ]
         perror
 
-mkDiscoveryNodeMPW ::
+mkNodeMPW ::
   ClosedTerm
-    ( PDiscoveryConfig
+    ( PConfig
         :--> PMintingPolicy
     )
-mkDiscoveryNodeMPW = phoistAcyclic $ plam $ \discConfig redm ctx ->
-  let red = punsafeCoerce @_ @_ @PDiscoveryNodeAction redm
-   in popaque $ mkDiscoveryNodeMP # discConfig # red # ctx
+mkNodeMPW = phoistAcyclic $ plam $ \discConfig redm ctx ->
+  let red = punsafeCoerce @_ @_ @PNodeAction redm
+   in popaque $ mkNodeMP # discConfig # red # ctx
 
-discoveryCurrencySymbol :: CurrencySymbol
-discoveryCurrencySymbol = "746fa3ba2daded6ab9ccc1e39d3835aa1dfcb9b5a54acc2ebe6b79a4"
+currencySymbol :: CurrencySymbol
+currencySymbol = "746fa3ba2daded6ab9ccc1e39d3835aa1dfcb9b5a54acc2ebe6b79a4"
 
-discoveryTokenName :: TokenName
-discoveryTokenName = "FSN"
+tokenName :: TokenName
+tokenName = "FSN"
 
 initMintedValue :: Value
-initMintedValue = singleton discoveryCurrencySymbol discoveryTokenName 1
+initMintedValue = singleton currencySymbol tokenName 1
 
-initUTxO :: TxOutRef
-initUTxO = TxOutRef "2c6dbc95c1e96349c4131a9d19b029362542b31ffd2340ea85dd8f28e271ff6d" 1
+initTxOutRef :: TxOutRef
+initTxOutRef = TxOutRef "2c6dbc95c1e96349c4131a9d19b029362542b31ffd2340ea85dd8f28e271ff6d" 1
 
-discoveryDeadline :: POSIXTime
-discoveryDeadline = POSIXTime 96_400_000
+deadline :: POSIXTime
+deadline = POSIXTime 96_400_000
 
 penaltyAddress :: Address
 penaltyAddress =
@@ -156,17 +143,17 @@ penaltyAddress =
       stakeCred = PubKeyCredential "52563c5410bff6a0d43ccebb7c37e1f69f5eb260552521adff33b9c2"
    in Address (ScriptCredential cred) (Just (StakingHash stakeCred))
 
-discoveryConfig :: Term s PDiscoveryConfig
-discoveryConfig =
+config :: Term s PConfig
+config =
   pconstant
-    ( DiscoveryConfig
-        { initUTxO
-        , discoveryDeadline
+    ( Config
+        { initUTxO = initTxOutRef
+        , deadline
         , penaltyAddress
         }
     )
 
-initAction :: DiscoveryNodeAction
+initAction :: NodeAction
 initAction = Init
 
 initUTXO :: UTXO
@@ -195,6 +182,17 @@ headUTXO =
           }
     ]
 
+badHeadUTXO :: UTXO
+badHeadUTXO =
+  mconcat
+    [ address headAddr
+    , withValue (singleton "" "" 9_000_000 <> initMintedValue)
+    , withInlineDatum $
+        MkSetNode
+          { key = Key "badHead"
+          , next = Empty
+          }
+    ]
 initScriptContext :: ScriptContext
 initScriptContext =
   buildMinting' $
@@ -203,14 +201,25 @@ initScriptContext =
       , input initUTXO
       , output headUTXO
       , mint initMintedValue
-      , withMinting discoveryCurrencySymbol
+      , withMinting currencySymbol
       ]
 
-deinitAction :: DiscoveryNodeAction
+badInitScriptContext :: ScriptContext
+badInitScriptContext =
+  buildMinting' $
+    mconcat
+      [ txId "2c6dbc95c1e96349c4131a9d19b029362542b31ffd2340ea85dd8f28e271ff6d"
+      , input initUTXO
+      , output badHeadUTXO
+      , mint initMintedValue
+      , withMinting currencySymbol
+      ]
+
+deinitAction :: NodeAction
 deinitAction = Deinit
 
 deinitMintedValue :: Value
-deinitMintedValue = singleton discoveryCurrencySymbol discoveryTokenName (-1)
+deinitMintedValue = singleton currencySymbol tokenName (-1)
 
 deinitScriptContext :: ScriptContext
 deinitScriptContext =
@@ -218,7 +227,15 @@ deinitScriptContext =
     mconcat
       [ input headUTXO
       , mint deinitMintedValue
-      , withMinting discoveryCurrencySymbol
+      , withMinting currencySymbol
+      ]
+
+badDeinitScriptContext :: ScriptContext
+badDeinitScriptContext =
+  buildMinting' $
+    mconcat
+      [ input headUTXO
+      , withMinting currencySymbol
       ]
 
 user1PKH :: BuiltinByteString
@@ -234,15 +251,15 @@ insertTokenName :: TokenName
 insertTokenName = "FSNe18d73505be6420225ed2a42c8e975e4c6f9148ab38e951ea2572e54"
 
 coveringMintedValue :: Value
-coveringMintedValue = singleton discoveryCurrencySymbol coveringTokenName 1
+coveringMintedValue = singleton currencySymbol coveringTokenName 1
 
 coveringNodeValue :: Value
 coveringNodeValue = singleton "" "" 9_000_000 <> coveringMintedValue
 
 insertMintedValue :: Value
-insertMintedValue = singleton discoveryCurrencySymbol insertTokenName 1
+insertMintedValue = singleton currencySymbol insertTokenName 1
 
-coveringNode :: DiscoverySetNode
+coveringNode :: SetNode
 coveringNode =
   MkSetNode
     { key = Key user1PKH
@@ -257,7 +274,7 @@ coveringUTXO =
     , withInlineDatum coveringNode
     ]
 
-outputPrevNode :: DiscoverySetNode
+outputPrevNode :: SetNode
 outputPrevNode =
   MkSetNode
     { key = coveringNode.key
@@ -272,7 +289,7 @@ outputPrevNodeUTXO =
     , withInlineDatum outputPrevNode
     ]
 
-outputNode :: DiscoverySetNode
+outputNode :: SetNode
 outputNode =
   MkSetNode
     { key = Key user2PKH
@@ -287,7 +304,22 @@ outputNodeUTXO =
     , withInlineDatum outputNode
     ]
 
-insertAction :: DiscoveryNodeAction
+badOutputNode :: SetNode
+badOutputNode =
+  MkSetNode
+    { key = Empty
+    , next = coveringNode.next
+    }
+
+badOutputNodeUTXO :: UTXO
+badOutputNodeUTXO =
+  mconcat
+    [ address headAddr
+    , withValue (singleton "" "" 9_000_000 <> insertMintedValue)
+    , withInlineDatum badOutputNode
+    ]
+
+insertAction :: NodeAction
 insertAction = Insert (PubKeyHash user2PKH) coveringNode
 
 insertValidTimeRange :: POSIXTimeRange
@@ -301,15 +333,28 @@ insertScriptContext =
       , output outputPrevNodeUTXO
       , output outputNodeUTXO
       , mint insertMintedValue
-      , withMinting discoveryCurrencySymbol
+      , withMinting currencySymbol
       , timeRange insertValidTimeRange
       , signedWith (PubKeyHash user2PKH)
       ]
 
-removeAction :: DiscoveryNodeAction
+badInsertScriptContext :: ScriptContext
+badInsertScriptContext =
+  buildMinting' $
+    mconcat
+      [ input coveringUTXO
+      , output outputPrevNodeUTXO
+      , output badOutputNodeUTXO
+      , mint insertMintedValue
+      , withMinting currencySymbol
+      , timeRange insertValidTimeRange
+      , signedWith (PubKeyHash user2PKH)
+      ]
+
+removeAction :: NodeAction
 removeAction = Remove (PubKeyHash user2PKH) coveringNode
 
-rmCoveringNode :: DiscoverySetNode
+rmCoveringNode :: SetNode
 rmCoveringNode =
   MkSetNode
     { key = Key user1PKH
@@ -324,7 +369,7 @@ inputPrevNodeUTXO =
     , withInlineDatum rmCoveringNode
     ]
 
-removeNode :: DiscoverySetNode
+removeNode :: SetNode
 removeNode =
   MkSetNode
     { key = Key user2PKH
@@ -339,7 +384,7 @@ removeNodeUTXO =
     , withInlineDatum removeNode
     ]
 
-rmOutputNode :: DiscoverySetNode
+rmOutputNode :: SetNode
 rmOutputNode =
   MkSetNode
     { key = rmCoveringNode.key
@@ -361,7 +406,7 @@ removeTokenName :: TokenName
 removeTokenName = "FSNe18d73505be6420225ed2a42c8e975e4c6f9148ab38e951ea2572e54"
 
 removeMintedValue :: Value
-removeMintedValue = singleton discoveryCurrencySymbol removeTokenName (-1)
+removeMintedValue = singleton currencySymbol removeTokenName (-1)
 
 removeScriptContext :: ScriptContext
 removeScriptContext =
@@ -371,7 +416,19 @@ removeScriptContext =
       , input removeNodeUTXO
       , output rmOutputNodeUTXO
       , mint removeMintedValue
-      , withMinting discoveryCurrencySymbol
+      , withMinting currencySymbol
+      , timeRange removeValidTimeRange
+      , signedWith (PubKeyHash user2PKH)
+      ]
+
+badRemoveScriptContext :: ScriptContext
+badRemoveScriptContext =
+  buildMinting' $
+    mconcat
+      [ input inputPrevNodeUTXO
+      , input removeNodeUTXO
+      , output rmOutputNodeUTXO
+      , withMinting currencySymbol
       , timeRange removeValidTimeRange
       , signedWith (PubKeyHash user2PKH)
       ]
@@ -395,18 +452,24 @@ lateRemoveScriptContext =
       , output rmOutputNodeUTXO
       , output penaltyOutputUTXO
       , mint removeMintedValue
-      , withMinting discoveryCurrencySymbol
+      , withMinting currencySymbol
       , timeRange removeValidLateTimeRange
       , signedWith (PubKeyHash user2PKH)
       ]
 
 unitTest :: TestTree
-unitTest = tryFromPTerm "Linkedlist Unit Test" (mkDiscoveryNodeMPW # discoveryConfig) $ do
+unitTest = tryFromPTerm "Linkedlist Unit Test" (mkNodeMPW # config) $ do
   testEvalCase
     "Pass - Init Linkedlist"
     Success
     [ PlutusTx.toData initAction
     , PlutusTx.toData initScriptContext
+    ]
+  testEvalCase
+    "Failure - Init Linkedlist"
+    Failure
+    [ PlutusTx.toData initAction
+    , PlutusTx.toData badInitScriptContext
     ]
   testEvalCase
     "Pass - Deinit Linkedlist"
@@ -415,10 +478,22 @@ unitTest = tryFromPTerm "Linkedlist Unit Test" (mkDiscoveryNodeMPW # discoveryCo
     , PlutusTx.toData deinitScriptContext
     ]
   testEvalCase
+    "Failure - Deinit Linkedlist"
+    Failure
+    [ PlutusTx.toData deinitAction
+    , PlutusTx.toData badDeinitScriptContext
+    ]
+  testEvalCase
     "Pass - Insert Linkedlist"
     Success
     [ PlutusTx.toData insertAction
     , PlutusTx.toData insertScriptContext
+    ]
+  testEvalCase
+    "Failure - Insert Linkedlist"
+    Failure
+    [ PlutusTx.toData insertAction
+    , PlutusTx.toData badInsertScriptContext
     ]
   testEvalCase
     "Pass - Remove Linkedlist"
@@ -431,4 +506,10 @@ unitTest = tryFromPTerm "Linkedlist Unit Test" (mkDiscoveryNodeMPW # discoveryCo
     Success
     [ PlutusTx.toData removeAction
     , PlutusTx.toData lateRemoveScriptContext
+    ]
+  testEvalCase
+    "Failure - Remove Linkedlist"
+    Failure
+    [ PlutusTx.toData removeAction
+    , PlutusTx.toData badRemoveScriptContext
     ]

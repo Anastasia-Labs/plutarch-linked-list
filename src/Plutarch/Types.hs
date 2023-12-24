@@ -5,15 +5,15 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Plutarch.Types (
-  PDiscoveryNodeAction (..),
-  DiscoveryNodeAction (..),
-  PDiscoveryConfig (..),
-  DiscoveryConfig (..),
-  PDiscoverySetNode (..),
+  PNodeAction (..),
+  NodeAction (..),
+  PConfig (..),
+  Config (..),
+  PSetNode (..),
   PNodeKey (..),
   PNodeKeyState (..),
-  DiscoverySetNode (..),
-  DiscoveryNodeKey (..),
+  SetNode (..),
+  NodeKey (..),
   isEmptySet,
   asPredecessorOf,
   asSuccessorOf,
@@ -52,64 +52,64 @@ import PlutusLedgerApi.V2 (
  )
 import PlutusTx qualified
 
-data DiscoveryConfig = DiscoveryConfig
+data Config = Config
   { initUTxO :: TxOutRef
-  , discoveryDeadline :: POSIXTime
+  , deadline :: POSIXTime
   , penaltyAddress :: Address
   }
   deriving stock (Generic, Eq, Show)
 
-PlutusTx.makeIsDataIndexed ''DiscoveryConfig [('DiscoveryConfig, 0)]
+PlutusTx.makeIsDataIndexed ''Config [('Config, 0)]
 
-newtype PDiscoveryConfig (s :: S)
-  = PDiscoveryConfig
+newtype PConfig (s :: S)
+  = PConfig
       ( Term
           s
           ( PDataRecord
               '[ "initUTxO" ':= PTxOutRef
-               , "discoveryDeadline" ':= PPOSIXTime
+               , "deadline" ':= PPOSIXTime
                , "penaltyAddress" ':= PAddress
                ]
           )
       )
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PDataFields, PEq)
-instance PUnsafeLiftDecl PDiscoveryConfig where type PLifted PDiscoveryConfig = DiscoveryConfig
-deriving via (DerivePConstantViaData DiscoveryConfig PDiscoveryConfig) instance PConstantDecl DiscoveryConfig
-instance DerivePlutusType PDiscoveryConfig where type DPTStrat _ = PlutusTypeData
+instance PUnsafeLiftDecl PConfig where type PLifted PConfig = Config
+deriving via (DerivePConstantViaData Config PConfig) instance PConstantDecl Config
+instance DerivePlutusType PConfig where type DPTStrat _ = PlutusTypeData
 
-data DiscoveryNodeKey = Key BuiltinByteString | Empty
+data NodeKey = Key BuiltinByteString | Empty
   deriving stock (Show, Eq, Ord, Generic)
 
-PlutusTx.unstableMakeIsData ''DiscoveryNodeKey
-PlutusTx.makeLift ''DiscoveryNodeKey
+PlutusTx.unstableMakeIsData ''NodeKey
+PlutusTx.makeLift ''NodeKey
 
-data DiscoverySetNode = MkSetNode
-  { key :: DiscoveryNodeKey
-  , next :: DiscoveryNodeKey
+data SetNode = MkSetNode
+  { key :: NodeKey
+  , next :: NodeKey
   }
   deriving stock (Show, Eq, Generic)
 
-PlutusTx.makeIsDataIndexed ''DiscoverySetNode [('MkSetNode, 0)]
-PlutusTx.makeLift ''DiscoverySetNode
+PlutusTx.makeIsDataIndexed ''SetNode [('MkSetNode, 0)]
+PlutusTx.makeLift ''SetNode
 
-data DiscoveryNodeAction
+data NodeAction
   = Init
   | Deinit
   | -- | first arg is the key to insert, second arg is the covering node
-    Insert PubKeyHash DiscoverySetNode
+    Insert PubKeyHash SetNode
   | -- | first arg is the key to remove, second arg is the covering node
-    Remove PubKeyHash DiscoverySetNode
+    Remove PubKeyHash SetNode
   deriving stock (Show, Eq, Generic)
 
 PlutusTx.makeIsDataIndexed
-  ''DiscoveryNodeAction
+  ''NodeAction
   [ ('Init, 0)
   , ('Deinit, 1)
   , ('Insert, 2)
   , ('Remove, 3)
   ]
-PlutusTx.makeLift ''DiscoveryNodeAction
+PlutusTx.makeLift ''NodeAction
 
 data PNodeKey (s :: S)
   = PKey (Term s (PDataRecord '["_0" ':= PByteString]))
@@ -118,12 +118,12 @@ data PNodeKey (s :: S)
   deriving anyclass (PlutusType, PIsData, PEq)
 
 deriving via
-  (DerivePConstantViaData DiscoveryNodeKey PNodeKey)
+  (DerivePConstantViaData NodeKey PNodeKey)
   instance
-    PConstantDecl DiscoveryNodeKey
+    PConstantDecl NodeKey
 
 instance PUnsafeLiftDecl PNodeKey where
-  type PLifted PNodeKey = DiscoveryNodeKey
+  type PLifted PNodeKey = NodeKey
 
 deriving anyclass instance
   PTryFrom PData PNodeKey
@@ -147,17 +147,17 @@ instance ScottConvertible PNodeKey where
     PKeyScott bs -> pcon (PKey (pdcons # pdata bs # pdnil))
     PEmptyScott -> pcon (PEmpty pdnil)
 
-data PDiscoverySetNodeState (s :: S) = PDiscoverySetNodeState
+data PSetNodeState (s :: S) = PSetNodeState
   { key :: Term s PNodeKeyState
   , next :: Term s PNodeKeyState
   }
   deriving stock (Generic)
   deriving anyclass (PlutusType, PEq)
 
-instance DerivePlutusType PDiscoverySetNodeState where type DPTStrat _ = PlutusTypeScott
+instance DerivePlutusType PSetNodeState where type DPTStrat _ = PlutusTypeScott
 
-newtype PDiscoverySetNode (s :: S)
-  = PDiscoverySetNode
+newtype PSetNode (s :: S)
+  = PSetNode
       ( Term
           s
           ( PDataRecord
@@ -170,35 +170,35 @@ newtype PDiscoverySetNode (s :: S)
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PDataFields, PEq)
 
-instance DerivePlutusType PDiscoverySetNode where type DPTStrat _ = PlutusTypeData
+instance DerivePlutusType PSetNode where type DPTStrat _ = PlutusTypeData
 
 deriving anyclass instance
-  PTryFrom PData PDiscoverySetNode
+  PTryFrom PData PSetNode
 
 deriving anyclass instance
-  PTryFrom PData (PAsData PDiscoverySetNode)
+  PTryFrom PData (PAsData PSetNode)
 
-instance PUnsafeLiftDecl PDiscoverySetNode where
-  type PLifted PDiscoverySetNode = DiscoverySetNode
+instance PUnsafeLiftDecl PSetNode where
+  type PLifted PSetNode = SetNode
 
 deriving via
-  (DerivePConstantViaData DiscoverySetNode PDiscoverySetNode)
+  (DerivePConstantViaData SetNode PSetNode)
   instance
-    PConstantDecl DiscoverySetNode
+    PConstantDecl SetNode
 
-instance ScottConvertible PDiscoverySetNode where
-  type ScottOf PDiscoverySetNode = PDiscoverySetNodeState
-  toScott discSetNode' = pmatch discSetNode' $ \(PDiscoverySetNode discSetNode) -> pletFields @'["key", "next"] discSetNode $ \discSetNodeF ->
-    pcon (PDiscoverySetNodeState {key = toScott discSetNodeF.key, next = toScott discSetNodeF.next})
+instance ScottConvertible PSetNode where
+  type ScottOf PSetNode = PSetNodeState
+  toScott discSetNode' = pmatch discSetNode' $ \(PSetNode discSetNode) -> pletFields @'["key", "next"] discSetNode $ \discSetNodeF ->
+    pcon (PSetNodeState {key = toScott discSetNodeF.key, next = toScott discSetNodeF.next})
   fromScott discSetNode =
     pmatch discSetNode $
-      \( PDiscoverySetNodeState
+      \( PSetNodeState
           { key
           , next
           }
         ) ->
           pcon
-            ( PDiscoverySetNode
+            ( PSetNode
                 ( pdcons @"key"
                     # pdata (fromScott key)
                     #$ (pdcons @"next" # pdata (fromScott next))
@@ -207,42 +207,42 @@ instance ScottConvertible PDiscoverySetNode where
                 )
             )
 
-mkNode :: Term s (PNodeKey :--> PNodeKey :--> PDiscoverySetNode)
+mkNode :: Term s (PNodeKey :--> PNodeKey :--> PSetNode)
 mkNode = phoistAcyclic $
   plam $ \key next ->
     pcon $
-      PDiscoverySetNode $
+      PSetNode $
         pdcons @"key"
           # pdata key
           #$ pdcons @"next"
           # pdata next
           #$ pdnil
 
-data PDiscoveryNodeAction (s :: S)
+data PNodeAction (s :: S)
   = PInit (Term s (PDataRecord '[]))
   | PDeinit (Term s (PDataRecord '[]))
-  | PInsert (Term s (PDataRecord '["keyToInsert" ':= PPubKeyHash, "coveringNode" ':= PDiscoverySetNode]))
-  | PRemove (Term s (PDataRecord '["keyToRemove" ':= PPubKeyHash, "coveringNode" ':= PDiscoverySetNode]))
+  | PInsert (Term s (PDataRecord '["keyToInsert" ':= PPubKeyHash, "coveringNode" ':= PSetNode]))
+  | PRemove (Term s (PDataRecord '["keyToRemove" ':= PPubKeyHash, "coveringNode" ':= PSetNode]))
   deriving stock (Generic)
   deriving anyclass (PlutusType, PIsData, PEq)
 
-instance DerivePlutusType PDiscoveryNodeAction where type DPTStrat _ = PlutusTypeData
+instance DerivePlutusType PNodeAction where type DPTStrat _ = PlutusTypeData
 
 deriving anyclass instance
-  PTryFrom PData (PAsData PDiscoveryNodeAction)
+  PTryFrom PData (PAsData PNodeAction)
 
-instance PUnsafeLiftDecl PDiscoveryNodeAction where
-  type PLifted PDiscoveryNodeAction = DiscoveryNodeAction
+instance PUnsafeLiftDecl PNodeAction where
+  type PLifted PNodeAction = NodeAction
 
 deriving via
-  (DerivePConstantViaData DiscoveryNodeAction PDiscoveryNodeAction)
+  (DerivePConstantViaData NodeAction PNodeAction)
   instance
-    PConstantDecl DiscoveryNodeAction
+    PConstantDecl NodeAction
 
 -----------------------------------------------
 -- Helpers:
 
-mkBSNode :: ClosedTerm (PByteString :--> PByteString :--> PAsData PDiscoverySetNode)
+mkBSNode :: ClosedTerm (PByteString :--> PByteString :--> PAsData PSetNode)
 mkBSNode = phoistAcyclic $
   plam $ \key' next' ->
     let key = pcon $ PKey $ pdcons @"_0" # pdata key' #$ pdnil
@@ -250,14 +250,14 @@ mkBSNode = phoistAcyclic $
      in pdata $ mkNode # key # next
 
 -- | Checks that the node is the empty head node and the datum is empty
-isEmptySet :: ClosedTerm (PAsData PDiscoverySetNode :--> PBool)
+isEmptySet :: ClosedTerm (PAsData PSetNode :--> PBool)
 isEmptySet = phoistAcyclic $
   plam $ \head -> P.do
     keys <- pletFields @'["key", "next"] head
     isNothing # pfromData keys.key #&& isNothing # pfromData keys.next
 
 -- | Checks that a PubKeyHash does belong to the first Node in the set.
-isFirstNode :: ClosedTerm (PByteString :--> PDiscoverySetNode :--> PBool)
+isFirstNode :: ClosedTerm (PByteString :--> PSetNode :--> PBool)
 isFirstNode = phoistAcyclic $
   plam $ \key node -> P.do
     keys <- pletFields @'["key", "next"] node
@@ -267,7 +267,7 @@ isFirstNode = phoistAcyclic $
       _ -> pcon PFalse
 
 -- | Checks that a PubkeyHash does belong to the last Node in a set.
-isLastNode :: ClosedTerm (PByteString :--> PDiscoverySetNode :--> PBool)
+isLastNode :: ClosedTerm (PByteString :--> PSetNode :--> PBool)
 isLastNode = phoistAcyclic $
   plam $ \key node -> P.do
     keys <- pletFields @'["key", "next"] node
@@ -289,7 +289,7 @@ isNothing = phoistAcyclic $
  Seen as if the node between them was removed.
  @node.key@ remains the same, @node.next@ changes to @next@.
 -}
-asPredecessorOf :: ClosedTerm (PAsData PDiscoverySetNode :--> PByteString :--> PDiscoverySetNode)
+asPredecessorOf :: ClosedTerm (PAsData PSetNode :--> PByteString :--> PSetNode)
 asPredecessorOf = phoistAcyclic $
   plam $ \node next ->
     let nodeKey = pfromData $ pfield @"key" # node
@@ -302,7 +302,7 @@ asPredecessorOf = phoistAcyclic $
  Seen as if the node between them was removed.
  @node.next@ remains the same, @node.key@ changes to @key@.
 -}
-asSuccessorOf :: ClosedTerm (PByteString :--> PAsData PDiscoverySetNode :--> PDiscoverySetNode)
+asSuccessorOf :: ClosedTerm (PByteString :--> PAsData PSetNode :--> PSetNode)
 asSuccessorOf = phoistAcyclic $
   plam $ \key node ->
     let nodeNext = pfromData $ pfield @"next" # node
@@ -310,7 +310,7 @@ asSuccessorOf = phoistAcyclic $
      in mkNode # keyPK # nodeNext
 
 -- | Extracts the next node key
-getNextPK :: ClosedTerm (PAsData PDiscoverySetNode :--> PMaybe PPubKeyHash)
+getNextPK :: ClosedTerm (PAsData PSetNode :--> PMaybe PPubKeyHash)
 getNextPK = phoistAcyclic $
   plam $ \node ->
     let nextNodeKey = pfromData $ pfield @"next" # node
@@ -319,7 +319,7 @@ getNextPK = phoistAcyclic $
           PKey ((pfield @"_0" #) -> n) -> pcon $ PJust $ pcon $ PPubKeyHash $ pfromData n
 
 -- | Extracts the node key
-getCurrentPK :: ClosedTerm (PAsData PDiscoverySetNode :--> PMaybe PPubKeyHash)
+getCurrentPK :: ClosedTerm (PAsData PSetNode :--> PMaybe PPubKeyHash)
 getCurrentPK = phoistAcyclic $
   plam $ \node ->
     let nodeKey = pfromData $ pfield @"key" # node
@@ -330,7 +330,7 @@ getCurrentPK = phoistAcyclic $
 {- | Checks whether @SetNode@ key is less than next node key.
  Any valid sequence of nodes MUST follow this property.
 -}
-validNode :: ClosedTerm (PAsData PDiscoverySetNode :--> PBool)
+validNode :: ClosedTerm (PAsData PSetNode :--> PBool)
 validNode = phoistAcyclic $
   plam $ \node -> P.do
     nodeDatum <- pletFields @'["key", "next"] node
